@@ -1,13 +1,12 @@
 package com.jotly.backend.service;
 
-import com.jotly.backend.dto.LoginRequest;
 import com.jotly.backend.dto.LoginResponse;
 import com.jotly.backend.dto.RegisterRequest;
 import com.jotly.backend.dto.RegisterResponse;
 import com.jotly.backend.dto.RegistrationData;
 import com.jotly.backend.model.User;
 import com.jotly.backend.repository.UserRepository;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -18,81 +17,90 @@ public class AuthService {
     private final EmailService emailService;
     private final JwtService jwtService;
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
     private final OtpService otpService;
 
-    public AuthService(EmailService emailService, JwtService jwtService, UserRepository userRepository, PasswordEncoder passwordEncoder, OtpService otpService) {
+    @Value("${jotly.default-profile-photo}")
+    private String defaultProfilePhoto;
+
+    public AuthService(
+            EmailService emailService,
+            JwtService jwtService,
+            UserRepository userRepository,
+            OtpService otpService
+    ) {
         this.emailService = emailService;
         this.jwtService = jwtService;
         this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
         this.otpService = otpService;
     }
 
-    // Register user -> generate OTP -> store temporary data in Redis
-    public RegisterResponse register(RegisterRequest request) {
+    // REGISTER
 
-        // Check username
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Username already exists");
-        }
+    public RegisterResponse register(RegisterRequest request) {
 
         // Check email
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already exists");
         }
 
-        // Hash password BEFORE storing it temporarily
-        String passwordHash =
-                passwordEncoder.encode(request.getPassword());
+        // Use default profile photo if user didn't provide one
+        String profilePhoto = request.getProfilePhoto();
 
-        // Store registration information temporarily in Redis
+        if (profilePhoto == null || profilePhoto.isBlank()) {
+            profilePhoto = defaultProfilePhoto;
+        }
+
+        // Store temporary registration data in Redis
         RegistrationData registrationData =
                 new RegistrationData(
                         request.getName(),
-                        request.getUsername(),
                         request.getEmail(),
-                        passwordHash
+                        profilePhoto
                 );
 
         otpService.saveRegistrationData(registrationData);
 
-        // Generate OTP
+        // Generate registration OTP
         String otp = otpService.generateOtp();
 
-        // Store OTP in Redis for 5 minutes
-        otpService.saveOtp(
+        // Store OTP in Redis
+        otpService.saveRegistrationOtp(
                 request.getEmail(),
                 otp
         );
 
-        // TEMPORARY
-        // Later we will send this through email
+        // Send OTP through email
         emailService.sendOtp(
                 request.getEmail(),
                 otp
         );
 
-        RegisterResponse response = new RegisterResponse();
-
-        response.setName(request.getName());
-        response.setUsername(request.getUsername());
-
-        return response;
+        return new RegisterResponse(
+                "Registration OTP sent successfully",
+                request.getName()
+        );
     }
-    public RegisterResponse verifyOtp(
+
+    // VERIFY REGISTRATION OTP
+
+    public LoginResponse verifyRegistrationOtp(
             String email,
             String otp
     ) {
 
-        // 1. Verify OTP
-        boolean valid = otpService.verifyOtp(email, otp);
+        boolean valid =
+                otpService.verifyRegistrationOtp(
+                        email,
+                        otp
+                );
 
         if (!valid) {
-            throw new RuntimeException("Invalid or expired OTP");
+            throw new RuntimeException(
+                    "Invalid or expired OTP"
+            );
         }
 
-        // 2. Get temporary registration data from Redis
+        // Retrieve temporary registration data
         RegistrationData data =
                 otpService.getRegistrationData(email);
 
@@ -102,67 +110,103 @@ public class AuthService {
             );
         }
 
-        // 3. Create actual User
+        // Create permanent user
         User user = new User();
 
         user.setName(data.getName());
-        user.setUsername(data.getUsername());
         user.setEmail(data.getEmail());
-        user.setPassword(data.getPasswordHash());
-
+        user.setProfilePhoto(data.getProfilePhoto());
         user.setEmailVerified(true);
         user.setCreatedAt(LocalDateTime.now());
 
-        // 4. Save user permanently in PostgreSQL
         userRepository.save(user);
 
-        // 5. Remove temporary registration data from Redis
+        // Remove temporary registration data
         otpService.deleteRegistrationData(email);
 
-        // 6. Return response
-        RegisterResponse response = new RegisterResponse();
-
-        response.setName(user.getName());
-        response.setUsername(user.getUsername());
-
-        return response;
-    }
-
-    // Login
-    public LoginResponse login(LoginRequest request) {
-
-        User user = userRepository
-                .findByUsername(request.getUsername())
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Invalid username or password"
-                        )
+        // Generate JWT
+        String token =
+                jwtService.generateToken(
+                        user.getEmail()
                 );
 
-        // Check password
-        if (!passwordEncoder.matches(
-                request.getPassword(),
-                user.getPassword()
-        )) {
-            throw new RuntimeException(
-                    "Invalid username or password"
-            );
-        }
+        return new LoginResponse(
+                "Registration successful",
+                user.getEmail(),
+                token
+        );
+    }
 
-        // Check email verification
+    // SEND LOGIN OTP
+
+    public void sendLoginOtp(String email) {
+
+        User user =
+                userRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "User not found"
+                                )
+                        );
+
         if (!user.isEmailVerified()) {
             throw new RuntimeException(
                     "Please verify your email first"
             );
         }
 
+        // Generate login OTP
+        String otp = otpService.generateOtp();
+
+        // Store login OTP in Redis
+        otpService.saveLoginOtp(
+                email,
+                otp
+        );
+
+        // Send OTP
+        emailService.sendOtp(
+                email,
+                otp
+        );
+    }
+
+    // VERIFY LOGIN OTP
+
+    public LoginResponse verifyLoginOtp(
+            String email,
+            String otp
+    ) {
+
+        boolean valid =
+                otpService.verifyLoginOtp(
+                        email,
+                        otp
+                );
+
+        if (!valid) {
+            throw new RuntimeException(
+                    "Invalid or expired OTP"
+            );
+        }
+
+        User user =
+                userRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "User not found"
+                                )
+                        );
+
         // Generate JWT
         String token =
-                jwtService.generateToken(user.getUsername());
+                jwtService.generateToken(
+                        user.getEmail()
+                );
 
         return new LoginResponse(
                 "Login successful",
-                user.getUsername(),
+                user.getEmail(),
                 token
         );
     }

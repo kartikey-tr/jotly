@@ -10,7 +10,6 @@ import lombok.NoArgsConstructor;
 public class RegistrationData {
 
     private String name;
-    private String username;
     private String email;
-    private String passwordHash;
+    private String profilePhoto;
 }

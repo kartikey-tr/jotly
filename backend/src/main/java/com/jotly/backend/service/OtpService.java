@@ -19,6 +19,9 @@ public class OtpService {
         this.redisTemplate = redisTemplate;
     }
 
+    // GENERATE OTP
+
+
     public String generateOtp() {
 
         return String.format(
@@ -27,7 +30,10 @@ public class OtpService {
         );
     }
 
-    public void saveOtp(String email, String otp) {
+    // REGISTRATION OTP
+
+
+    public void saveRegistrationOtp(String email, String otp) {
 
         String key = "otp:registration:" + email;
 
@@ -39,7 +45,10 @@ public class OtpService {
         );
     }
 
-    public boolean verifyOtp(String email, String otp) {
+    public boolean verifyRegistrationOtp(
+            String email,
+            String otp
+    ) {
 
         String key = "otp:registration:" + email;
 
@@ -59,6 +68,49 @@ public class OtpService {
         return true;
     }
 
+    // LOGIN OTP
+
+    public void saveLoginOtp(
+            String email,
+            String otp
+    ) {
+
+        String key = "otp:login:" + email;
+
+        redisTemplate.opsForValue().set(
+                key,
+                otp,
+                5,
+                TimeUnit.MINUTES
+        );
+    }
+
+    public boolean verifyLoginOtp(
+            String email,
+            String otp
+    ) {
+
+        String key = "otp:login:" + email;
+
+        String storedOtp =
+                redisTemplate.opsForValue().get(key);
+
+        if (storedOtp == null) {
+            return false;
+        }
+
+        if (!storedOtp.equals(otp)) {
+            return false;
+        }
+
+        redisTemplate.delete(key);
+
+        return true;
+    }
+
+    // TEMPORARY REGISTRATION DATA
+
+
     public void saveRegistrationData(
             RegistrationData data
     ) {
@@ -69,9 +121,8 @@ public class OtpService {
                 key,
                 Map.of(
                         "name", data.getName(),
-                        "username", data.getUsername(),
                         "email", data.getEmail(),
-                        "passwordHash", data.getPasswordHash()
+                        "profilePhoto", data.getProfilePhoto()
                 )
         );
 
@@ -97,9 +148,8 @@ public class OtpService {
 
         return new RegistrationData(
                 (String) data.get("name"),
-                (String) data.get("username"),
                 (String) data.get("email"),
-                (String) data.get("passwordHash")
+                (String) data.get("profilePhoto")
         );
     }
 
