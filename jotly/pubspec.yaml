@@ -1,19 +1,48 @@
 name: jotly
-description: "A new Flutter project."
+description: "A modern note taking app"
 publish_to: 'none'
 version: 0.1.0+1
 
 environment:
-  sdk: ^3.13.2
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^14.2.7
+
+  # Local storage
+  flutter_secure_storage: ^9.2.2
+
+  # Networking
+  dio: ^5.6.0
+
+  # Image Handling
+  image_picker: ^1.0.7
+  crop_your_image: ^2.0.0
+
+  # Utils
+  uuid: ^4.4.2
+  intl: ^0.19.0
+  equatable: ^2.0.5
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  build_runner: ^2.4.12
+  riverpod_generator: ^2.4.0
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/fonts/
+    - assets/images/
