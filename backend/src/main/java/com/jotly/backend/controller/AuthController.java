@@ -1,6 +1,8 @@
 package com.jotly.backend.controller;
 
 import com.jotly.backend.dto.LoginResponse;
+import com.jotly.backend.dto.RefreshRequest;
+import com.jotly.backend.dto.RefreshResponse;
 import com.jotly.backend.dto.RegisterRequest;
 import com.jotly.backend.dto.RegisterResponse;
 import com.jotly.backend.dto.VerifyOtpRequest;
@@ -56,7 +58,7 @@ public class AuthController {
         );
     }
 
-    // Verify login OTP and generate JWT
+    // Verify login OTP and generate access + refresh tokens
     @PostMapping("/verify-login-otp")
     public ResponseEntity<LoginResponse> verifyLoginOtp(
             @Valid @RequestBody VerifyOtpRequest request) {
@@ -65,6 +67,19 @@ public class AuthController {
                 authService.verifyLoginOtp(
                         request.getEmail(),
                         request.getOtp()
+                );
+
+        return ResponseEntity.ok(response);
+    }
+
+    // Refresh access token
+    @PostMapping("/refresh")
+    public ResponseEntity<RefreshResponse> refresh(
+            @Valid @RequestBody RefreshRequest request) {
+
+        RefreshResponse response =
+                authService.refresh(
+                        request.getRefreshToken()
                 );
 
         return ResponseEntity.ok(response);
