@@ -1,0 +1,20 @@
+# IntelliJ
+.idea/
+*.iml
+
+# Maven
+**/target/
+
+# Spring Boot local configuration
+backend/src/main/resources/application.properties
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Flutter
+**/.dart_tool/
+**/build/
