@@ -1,9 +1,7 @@
 package com.jotly.backend.controller;
 
-import com.jotly.backend.dto.LoginRequest;
-import com.jotly.backend.dto.LoginResponse;
-import com.jotly.backend.dto.RegisterRequest;
-import com.jotly.backend.dto.RegisterResponse;
+
+import com.jotly.backend.dto.*;
 import com.jotly.backend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -37,6 +35,19 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request
     ) {
         LoginResponse response = authService.login(request);
+
+        return ResponseEntity.ok(response);
+    }
+    @PostMapping("/verify-otp")
+    public ResponseEntity<RegisterResponse> verifyOtp(
+            @Valid @RequestBody VerifyOtpRequest request
+    ) {
+
+        RegisterResponse response =
+                authService.verifyOtp(
+                        request.getEmail(),
+                        request.getOtp()
+                );
 
         return ResponseEntity.ok(response);
     }
