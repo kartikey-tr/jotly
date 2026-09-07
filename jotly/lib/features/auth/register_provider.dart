@@ -1,54 +1,79 @@
+import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/api_service.dart';
 
-class LoginState {
+
+class RegisterState {
   final bool isLoading;
   final bool otpSent;
   final String? email;
+  final String? displayName;
   final String? errorMessage;
 
-  const LoginState({
+  const RegisterState({
     this.isLoading = false,
     this.otpSent = false,
     this.email,
+    this.displayName,
     this.errorMessage,
   });
 
-  LoginState copyWith({
+  RegisterState copyWith({
     bool? isLoading,
     bool? otpSent,
     String? email,
+    String? displayName,
     String? errorMessage,
   }) {
-    return LoginState(
+    return RegisterState(
       isLoading: isLoading ?? this.isLoading,
       otpSent: otpSent ?? this.otpSent,
       email: email ?? this.email,
+      displayName: displayName ?? this.displayName,
       errorMessage: errorMessage,
     );
   }
 }
 
-class LoginNotifier extends StateNotifier<LoginState> {
+class RegisterNotifier extends StateNotifier<RegisterState> {
   final Ref _ref;
 
-  LoginNotifier(this._ref) : super(const LoginState());
+  RegisterNotifier(this._ref) : super(const RegisterState());
 
-  Future<bool> sendOtp(String email) async {
+  Future<bool> sendOtp({
+    required String email,
+    required String displayName,
+    Uint8List? avatarBytes,
+  }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final api = _ref.read(apiServiceProvider);
-      // Backend expects email as a query param, not a JSON body.
-      await api.post(
-        '/api/auth/send-login-otp?email=${Uri.encodeQueryComponent(email)}',
+
+      final formData = FormData.fromMap({
+        'name': displayName,
+        'email': email,
+        if (avatarBytes != null)
+          'profilePhoto': MultipartFile.fromBytes(
+            avatarBytes,
+            filename: 'avatar.jpg',
+          ),
+      });
+
+      await api.post('/api/auth/register', data: formData);
+
+      state = state.copyWith(
+        isLoading: false,
+        otpSent: true,
+        email: email,
+        displayName: displayName,
       );
-      state = state.copyWith(isLoading: false, otpSent: true, email: email);
       return true;
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Could not send OTP. Check the email and try again.',
+        errorMessage: 'Could not create your account. Please try again.',
       );
       return false;
     }
@@ -61,7 +86,8 @@ class LoginNotifier extends StateNotifier<LoginState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final api = _ref.read(apiServiceProvider);
-      final response = await api.post('/api/auth/verify-login-otp', data: {
+      final response =
+      await api.post('/api/auth/verify-registration-otp', data: {
         'email': email,
         'otp': otp,
       });
@@ -75,6 +101,7 @@ class LoginNotifier extends StateNotifier<LoginState> {
         accessToken: accessToken,
         refreshToken: refreshToken,
         email: responseEmail,
+        displayName: state.displayName,
       );
 
       state = state.copyWith(isLoading: false);
@@ -89,10 +116,11 @@ class LoginNotifier extends StateNotifier<LoginState> {
   }
 
   void reset() {
-    state = const LoginState();
+    state = const RegisterState();
   }
 }
 
-final loginProvider = StateNotifierProvider<LoginNotifier, LoginState>(
-      (ref) => LoginNotifier(ref),
+final registerProvider =
+StateNotifierProvider<RegisterNotifier, RegisterState>(
+      (ref) => RegisterNotifier(ref),
 );

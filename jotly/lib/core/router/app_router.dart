@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/register_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/splash/splash_screen.dart';
 
@@ -33,11 +34,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (!authState.isAuthenticated) {
-        return path == '/login' ? null : '/login';
+        if (path == '/login' || path == '/register') return null;
+        return '/login';
       }
 
-      // Authenticated: keep out of splash/login.
-      if (path == '/splash' || path == '/login') {
+      if (path == '/splash' || path == '/login' || path == '/register') {
         return '/home';
       }
 
@@ -51,6 +52,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
       ),
       GoRoute(
         path: '/home',
