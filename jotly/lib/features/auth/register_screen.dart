@@ -34,9 +34,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-
-  final _otpControllers = List.generate(6, (_) => TextEditingController());
-  final _otpFocusNodes = List.generate(6, (_) => FocusNode());
+  final _otpController = TextEditingController();
 
   Uint8List? _avatarBytes;
 
@@ -44,15 +42,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   int _resendSecondsLeft = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(registerProvider.notifier).reset();
+    });
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    for (final c in _otpControllers) {
-      c.dispose();
-    }
-    for (final f in _otpFocusNodes) {
-      f.dispose();
-    }
+    _otpController.dispose();
     _resendTimer?.cancel();
     super.dispose();
   }
@@ -96,10 +97,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _verifyOtp() async {
-    final otp = _otpControllers.map((c) => c.text).join();
-    if (otp.length < 6) return;
+    if (!_formKey.currentState!.validate()) return;
 
-    final success = await ref.read(registerProvider.notifier).verifyOtp(otp);
+    final success =
+    await ref.read(registerProvider.notifier).verifyOtp(_otpController.text.trim());
 
     if (success && mounted) {
       context.go('/home');
@@ -108,9 +109,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _resendOtp() async {
     if (_resendSecondsLeft > 0) return;
-    for (final c in _otpControllers) {
-      c.clear();
-    }
+    _otpController.clear();
     await ref.read(registerProvider.notifier).sendOtp(
       email: _emailController.text.trim(),
       displayName: _nameController.text.trim(),
@@ -135,25 +134,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   void _backToDetails() {
     _resendTimer?.cancel();
     _resendSecondsLeft = 0;
-    for (final c in _otpControllers) {
-      c.clear();
-    }
+    _otpController.clear();
     ref.read(registerProvider.notifier).reset();
   }
 
-  void _onOtpChanged(int index, String value) {
-    if (value.isNotEmpty && index < 5) {
-      _otpFocusNodes[index + 1].requestFocus();
-    }
-    if (value.isEmpty && index > 0) {
-      _otpFocusNodes[index - 1].requestFocus();
-    }
-    final complete = _otpControllers.every((c) => c.text.isNotEmpty);
-    if (complete) _verifyOtp();
-  }
-
   void _goToLogin() => context.pop();
-
 
   InputDecoration _fieldDecoration({
     required String hint,
@@ -237,9 +222,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 ),
                               ],
                             ),
-                            child: otpSent
-                                ? _buildOtpStep(registerState)
-                                : _buildDetailsStep(registerState),
+                            child: Form(
+                              key: _formKey,
+                              child: otpSent
+                                  ? _buildOtpStep(registerState)
+                                  : _buildDetailsStep(registerState),
+                            ),
                           ),
                           const SizedBox(height: 20),
                           _buildSignInSwitcher(),
@@ -341,126 +329,123 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Widget _buildDetailsStep(RegisterState state) {
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: GestureDetector(
-              onTap: _pickAndCropAvatar,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: GestureDetector(
+            onTap: _pickAndCropAvatar,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _RegisterColors.slate50,
+                    border: Border.all(
+                      color: _RegisterColors.primaryTintBorder,
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipOval(
+                    child: _avatarBytes != null
+                        ? Image.memory(_avatarBytes!, fit: BoxFit.cover)
+                        : const Icon(
+                      Icons.person_outline,
+                      size: 32,
+                      color: _RegisterColors.slate400,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: _RegisterColors.primary,
                       shape: BoxShape.circle,
-                      color: _RegisterColors.slate50,
-                      border: Border.all(
-                        color: _RegisterColors.primaryTintBorder,
-                        width: 2,
-                      ),
                     ),
-                    child: ClipOval(
-                      child: _avatarBytes != null
-                          ? Image.memory(_avatarBytes!, fit: BoxFit.cover)
-                          : const Icon(
-                        Icons.person_outline,
-                        size: 32,
-                        color: _RegisterColors.slate400,
-                      ),
+                    child: const Icon(
+                      Icons.add_a_photo_outlined,
+                      size: 14,
+                      color: Colors.white,
                     ),
                   ),
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: const BoxDecoration(
-                        color: _RegisterColors.primary,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add_a_photo_outlined,
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Center(
-            child: Text(
-              'Upload profile picture',
-              style: TextStyle(fontSize: 11, color: _RegisterColors.slate400),
-            ),
+        ),
+        const SizedBox(height: 8),
+        const Center(
+          child: Text(
+            'Upload profile picture',
+            style: TextStyle(fontSize: 11, color: _RegisterColors.slate400),
           ),
-          const SizedBox(height: 16),
-          _fieldLabel('Full Name'),
-          TextFormField(
-            controller: _nameController,
-            keyboardType: TextInputType.name,
-            style: const TextStyle(fontSize: 13, color: _RegisterColors.slate800),
-            decoration: _fieldDecoration(hint: 'Name', icon: Icons.person_outline),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) return 'Enter your name';
-              return null;
-            },
-          ),
+        ),
+        const SizedBox(height: 16),
+        _fieldLabel('Full Name'),
+        TextFormField(
+          controller: _nameController,
+          keyboardType: TextInputType.name,
+          style: const TextStyle(fontSize: 13, color: _RegisterColors.slate800),
+          decoration: _fieldDecoration(hint: 'Name', icon: Icons.person_outline),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) return 'Enter your name';
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        _fieldLabel('Email Address'),
+        TextFormField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          style: const TextStyle(fontSize: 13, color: _RegisterColors.slate800),
+          decoration: _fieldDecoration(hint: 'Email', icon: Icons.mail_outline),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) return 'Enter your email';
+            return null;
+          },
+        ),
+        if (state.errorMessage != null) ...[
           const SizedBox(height: 12),
-          _fieldLabel('Email Address'),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            style: const TextStyle(fontSize: 13, color: _RegisterColors.slate800),
-            decoration: _fieldDecoration(hint: 'Email', icon: Icons.mail_outline),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) return 'Enter your email';
-              return null;
-            },
-          ),
-          if (state.errorMessage != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              state.errorMessage!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: _RegisterColors.error, fontSize: 12),
-            ),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 46,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _RegisterColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: state.isLoading ? null : _sendOtp,
-              child: state.isLoading
-                  ? const SizedBox(
-                height: 18,
-                width: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-                  : const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Next', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward, size: 16),
-                ],
-              ),
-            ),
+          Text(
+            state.errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _RegisterColors.error, fontSize: 12),
           ),
         ],
-      ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 46,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _RegisterColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: state.isLoading ? null : _sendOtp,
+            child: state.isLoading
+                ? const SizedBox(
+              height: 18,
+              width: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+                : const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Next', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                SizedBox(width: 6),
+                Icon(Icons.arrow_forward, size: 16),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -524,7 +509,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _fieldLabel('Enter Verification Code'),
+            _fieldLabel('OTP'),
             TextButton(
               onPressed: _resendSecondsLeft > 0 ? null : _resendOtp,
               style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
@@ -541,10 +526,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(6, (index) => _buildOtpBox(index)),
+        TextFormField(
+          controller: _otpController,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(fontSize: 13, color: _RegisterColors.slate800),
+          decoration: _fieldDecoration(
+            hint: 'Enter the 6-digit code',
+            icon: Icons.lock_outline,
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Enter the OTP';
+            }
+            return null;
+          },
         ),
         if (state.errorMessage != null) ...[
           const SizedBox(height: 12),
@@ -597,39 +593,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildOtpBox(int index) {
-    return SizedBox(
-      width: 44,
-      height: 52,
-      child: TextField(
-        controller: _otpControllers[index],
-        focusNode: _otpFocusNodes[index],
-        maxLength: 1,
-        textAlign: TextAlign.center,
-        keyboardType: TextInputType.number,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        decoration: InputDecoration(
-          counterText: '',
-          filled: true,
-          fillColor: _RegisterColors.card,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _RegisterColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _RegisterColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _RegisterColors.primary, width: 1.5),
-          ),
-        ),
-        onChanged: (value) => _onOtpChanged(index, value),
-      ),
     );
   }
 
