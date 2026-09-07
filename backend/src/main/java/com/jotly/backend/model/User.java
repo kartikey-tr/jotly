@@ -25,6 +25,7 @@ public class User {
     private String email;
 
     private String profilePhoto;
+    private String profilePhotoPublicId;
 
     @Column(nullable = false)
     private boolean emailVerified;

@@ -12,27 +12,21 @@ import java.util.concurrent.TimeUnit;
 public class OtpService {
 
     private final StringRedisTemplate redisTemplate;
-
     private final SecureRandom secureRandom = new SecureRandom();
 
     public OtpService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
-    // GENERATE OTP
-
-
+    // Generate a 6-digit OTP
     public String generateOtp() {
-
         return String.format(
                 "%06d",
                 secureRandom.nextInt(1_000_000)
         );
     }
 
-    // REGISTRATION OTP
-
-
+    // Save registration OTP for 5 minutes
     public void saveRegistrationOtp(String email, String otp) {
 
         String key = "otp:registration:" + email;
@@ -45,15 +39,12 @@ public class OtpService {
         );
     }
 
-    public boolean verifyRegistrationOtp(
-            String email,
-            String otp
-    ) {
+    // Verify registration OTP
+    public boolean verifyRegistrationOtp(String email, String otp) {
 
         String key = "otp:registration:" + email;
 
-        String storedOtp =
-                redisTemplate.opsForValue().get(key);
+        String storedOtp = redisTemplate.opsForValue().get(key);
 
         if (storedOtp == null) {
             return false;
@@ -63,17 +54,14 @@ public class OtpService {
             return false;
         }
 
+        // Delete OTP after successful verification
         redisTemplate.delete(key);
 
         return true;
     }
 
-    // LOGIN OTP
-
-    public void saveLoginOtp(
-            String email,
-            String otp
-    ) {
+    // Save login OTP for 5 minutes
+    public void saveLoginOtp(String email, String otp) {
 
         String key = "otp:login:" + email;
 
@@ -85,15 +73,12 @@ public class OtpService {
         );
     }
 
-    public boolean verifyLoginOtp(
-            String email,
-            String otp
-    ) {
+    // Verify login OTP
+    public boolean verifyLoginOtp(String email, String otp) {
 
         String key = "otp:login:" + email;
 
-        String storedOtp =
-                redisTemplate.opsForValue().get(key);
+        String storedOtp = redisTemplate.opsForValue().get(key);
 
         if (storedOtp == null) {
             return false;
@@ -103,29 +88,45 @@ public class OtpService {
             return false;
         }
 
+        // Delete OTP after successful verification
         redisTemplate.delete(key);
 
         return true;
     }
 
-    // TEMPORARY REGISTRATION DATA
-
-
-    public void saveRegistrationData(
-            RegistrationData data
-    ) {
+    // Save temporary registration data in Redis
+    public void saveRegistrationData(RegistrationData data) {
 
         String key = "registration:" + data.getEmail();
 
-        redisTemplate.opsForHash().putAll(
+        redisTemplate.opsForHash().put(
                 key,
-                Map.of(
-                        "name", data.getName(),
-                        "email", data.getEmail(),
-                        "profilePhoto", data.getProfilePhoto()
-                )
+                "name",
+                data.getName()
         );
 
+        redisTemplate.opsForHash().put(
+                key,
+                "email",
+                data.getEmail()
+        );
+
+        redisTemplate.opsForHash().put(
+                key,
+                "profilePhoto",
+                data.getProfilePhoto()
+        );
+
+        // Public ID is null when the user uses the default photo
+        if (data.getProfilePhotoPublicId() != null) {
+            redisTemplate.opsForHash().put(
+                    key,
+                    "profilePhotoPublicId",
+                    data.getProfilePhotoPublicId()
+            );
+        }
+
+        // Registration data expires after 10 minutes
         redisTemplate.expire(
                 key,
                 10,
@@ -133,9 +134,8 @@ public class OtpService {
         );
     }
 
-    public RegistrationData getRegistrationData(
-            String email
-    ) {
+    // Get temporary registration data from Redis
+    public RegistrationData getRegistrationData(String email) {
 
         String key = "registration:" + email;
 
@@ -149,13 +149,13 @@ public class OtpService {
         return new RegistrationData(
                 (String) data.get("name"),
                 (String) data.get("email"),
-                (String) data.get("profilePhoto")
+                (String) data.get("profilePhoto"),
+                (String) data.get("profilePhotoPublicId")
         );
     }
 
-    public void deleteRegistrationData(
-            String email
-    ) {
+    // Delete temporary registration data
+    public void deleteRegistrationData(String email) {
 
         String key = "registration:" + email;
 

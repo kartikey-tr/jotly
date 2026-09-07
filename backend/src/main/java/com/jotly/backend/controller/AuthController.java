@@ -1,5 +1,9 @@
 package com.jotly.backend.controller;
 
+import com.jotly.backend.service.CloudinaryService;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
+
 import com.jotly.backend.dto.LoginResponse;
 import com.jotly.backend.dto.RefreshRequest;
 import com.jotly.backend.dto.RefreshResponse;
@@ -16,18 +20,51 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final CloudinaryService cloudinaryService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, CloudinaryService cloudinaryService) {
         this.authService = authService;
+        this.cloudinaryService = cloudinaryService;
     }
 
     // Register a new user and send OTP
-    @PostMapping("/register")
+    @PostMapping(
+            value = "/register",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     public ResponseEntity<RegisterResponse> register(
-            @Valid @RequestBody RegisterRequest request) {
+            @RequestParam("name") String name,
+            @RequestParam("email") String email,
+            @RequestParam(value = "profilePhoto", required = false)
+            MultipartFile profilePhoto
+    ) {
+
+        System.out.println("========== PROFILE PHOTO DEBUG ==========");
+
+        if (profilePhoto == null) {
+            System.out.println("PROFILE PHOTO: NULL");
+        } else {
+            System.out.println("PROFILE PHOTO NAME: "
+                    + profilePhoto.getOriginalFilename());
+
+            System.out.println("PROFILE PHOTO SIZE: "
+                    + profilePhoto.getSize());
+
+            System.out.println("PROFILE PHOTO TYPE: "
+                    + profilePhoto.getContentType());
+
+            System.out.println("PROFILE PHOTO EMPTY: "
+                    + profilePhoto.isEmpty());
+        }
+
+        System.out.println("=========================================");
+
+        RegisterRequest request = new RegisterRequest();
+        request.setName(name);
+        request.setEmail(email);
 
         RegisterResponse response =
-                authService.register(request);
+                authService.register(request, profilePhoto);
 
         return ResponseEntity.ok(response);
     }

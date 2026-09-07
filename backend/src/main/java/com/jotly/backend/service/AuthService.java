@@ -3,8 +3,8 @@ package com.jotly.backend.service;
 import com.jotly.backend.dto.*;
 import com.jotly.backend.model.User;
 import com.jotly.backend.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -18,46 +18,53 @@ public class AuthService {
     private final UserRepository userRepository;
     private final OtpService otpService;
     private final RefreshTokenService refreshTokenService;
-
-    @Value("${jotly.default-profile-photo}")
-    private String defaultProfilePhoto;
+    private final CloudinaryService cloudinaryService;
 
     public AuthService(
             EmailService emailService,
             JwtService jwtService,
             UserRepository userRepository,
             OtpService otpService,
-            RefreshTokenService refreshTokenService
+            RefreshTokenService refreshTokenService,
+            CloudinaryService cloudinaryService
     ) {
         this.emailService = emailService;
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.otpService = otpService;
         this.refreshTokenService = refreshTokenService;
+        this.cloudinaryService = cloudinaryService;
     }
 
     // REGISTER
 
-    public RegisterResponse register(RegisterRequest request) {
+    public RegisterResponse register(
+            RegisterRequest request,
+            MultipartFile profilePhoto
+    ) {
 
-        // Check email
+        // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already exists");
         }
 
-        // Use default profile photo if user didn't provide one
-        String profilePhoto = request.getProfilePhoto();
+        // Upload photo to Cloudinary.
+        // If no photo is provided, CloudinaryService
+        // returns the default profile photo URL
+        // and null public ID.
+        CloudinaryService.CloudinaryUploadResult uploadResult =
+                cloudinaryService.uploadProfilePhoto(profilePhoto);
 
-        if (profilePhoto == null || profilePhoto.isBlank()) {
-            profilePhoto = defaultProfilePhoto;
-        }
+        String photoUrl = uploadResult.secureUrl();
+        String photoPublicId = uploadResult.publicId();
 
         // Store temporary registration data in Redis
         RegistrationData registrationData =
                 new RegistrationData(
                         request.getName(),
                         request.getEmail(),
-                        profilePhoto
+                        photoUrl,
+                        photoPublicId
                 );
 
         otpService.saveRegistrationData(registrationData);
@@ -102,7 +109,7 @@ public class AuthService {
             );
         }
 
-        // Retrieve temporary registration data
+        // Retrieve temporary registration data from Redis
         RegistrationData data =
                 otpService.getRegistrationData(email);
 
@@ -112,12 +119,22 @@ public class AuthService {
             );
         }
 
-        // Create permanent user
+        // CREATE PERMANENT USER
+
         User user = new User();
 
         user.setName(data.getName());
         user.setEmail(data.getEmail());
+
+        // Cloudinary/default photo URL
         user.setProfilePhoto(data.getProfilePhoto());
+
+        // Cloudinary public ID
+        // This will be null when using the default photo.
+        user.setProfilePhotoPublicId(
+                data.getProfilePhotoPublicId()
+        );
+
         user.setEmailVerified(true);
         user.setCreatedAt(LocalDateTime.now());
 
@@ -126,23 +143,26 @@ public class AuthService {
         // Remove temporary registration data
         otpService.deleteRegistrationData(email);
 
-        // Generate access token
+        // ACCESS TOKEN
+
         String accessToken =
                 jwtService.generateToken(
                         user.getEmail()
                 );
 
-        // Generate refresh token
+        // REFRESH TOKEN
+
         String refreshToken =
                 refreshTokenService.generateRefreshToken();
 
-        // Generate refresh-token family
+        // REFRESH TOKEN FAMILY
+
         String familyId =
                 refreshTokenService.generateFamilyId();
 
-        // Record creation time
-        Instant createdAt =
-                Instant.now();
+        // TOKEN EXPIRY
+
+        Instant createdAt = Instant.now();
 
         // Hard expiry: 1 year
         Instant absoluteExpiry =
@@ -158,7 +178,8 @@ public class AuthService {
                         ChronoUnit.DAYS
                 );
 
-        // Store refresh token in Redis
+        // STORE REFRESH TOKEN IN REDIS
+
         refreshTokenService.saveRefreshToken(
                 refreshToken,
                 user.getId(),
@@ -237,23 +258,26 @@ public class AuthService {
                                 )
                         );
 
-        // Generate access token
+        // ACCESS TOKEN
+
         String accessToken =
                 jwtService.generateToken(
                         user.getEmail()
                 );
 
-        // Generate refresh token
+        // REFRESH TOKEN
+
         String refreshToken =
                 refreshTokenService.generateRefreshToken();
 
-        // Generate refresh-token family
+        // REFRESH TOKEN FAMILY
+
         String familyId =
                 refreshTokenService.generateFamilyId();
 
-        // Record creation time
-        Instant createdAt =
-                Instant.now();
+        // TOKEN EXPIRY
+
+        Instant createdAt = Instant.now();
 
         // Hard expiry: 1 year
         Instant absoluteExpiry =
@@ -269,7 +293,9 @@ public class AuthService {
                         ChronoUnit.DAYS
                 );
 
-        // Store refresh token in Redis
+        // STORE REFRESH TOKEN IN REDIS
+
+
         refreshTokenService.saveRefreshToken(
                 refreshToken,
                 user.getId(),
@@ -289,7 +315,10 @@ public class AuthService {
 
     // REFRESH ACCESS TOKEN
 
-    public RefreshResponse refresh(String refreshToken) {
+
+    public RefreshResponse refresh(
+            String refreshToken
+    ) {
 
         // Find refresh token in Redis
         RefreshTokenService.RefreshTokenData tokenData =
@@ -304,7 +333,8 @@ public class AuthService {
             );
         }
 
-        // Detect reuse of an already-rotated token
+        // DETECT REFRESH TOKEN REUSE
+
         if ("ROTATED".equals(tokenData.status())) {
 
             // Revoke entire refresh-token family
@@ -317,9 +347,10 @@ public class AuthService {
             );
         }
 
+        // CHECK HARD EXPIRY
+
         Instant now = Instant.now();
 
-        // Check hard 1-year expiry
         if (now.isAfter(tokenData.absoluteExpiry())) {
 
             refreshTokenService.revokeFamily(
@@ -331,7 +362,9 @@ public class AuthService {
             );
         }
 
-        // Find user
+        // FIND USER
+
+
         User user =
                 userRepository.findById(
                                 tokenData.userId()
@@ -342,22 +375,31 @@ public class AuthService {
                                 )
                         );
 
-        // Rotate old refresh token
+        // ROTATE OLD REFRESH TOKEN
+
+
         refreshTokenService.markTokenAsRotated(
                 refreshToken
         );
 
-        // Generate new access token
+        // GENERATE NEW ACCESS TOKEN
+
+
         String accessToken =
                 jwtService.generateToken(
                         user.getEmail()
                 );
 
-        // Generate new refresh token
+        // GENERATE NEW REFRESH TOKEN
+
+
         String newRefreshToken =
                 refreshTokenService.generateRefreshToken();
 
-        // Sliding expiry: 60 days from now
+
+        // NEW SLIDING EXPIRY
+
+
         Instant newExpiry =
                 now.plus(
                         60,
@@ -368,11 +410,13 @@ public class AuthService {
         if (newExpiry.isAfter(
                 tokenData.absoluteExpiry()
         )) {
+
             newExpiry =
                     tokenData.absoluteExpiry();
         }
 
-        // Store new refresh token
+        // STORE NEW REFRESH TOKEN
+
         refreshTokenService.saveRefreshToken(
                 newRefreshToken,
                 user.getId(),
